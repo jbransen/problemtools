@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import re
 import os.path
+import subprocess
 import sys
 import string
 from string import Template
@@ -29,16 +30,14 @@ def convert(problem, options=None):
     origcwd = os.getcwd()
 
     os.chdir(os.path.dirname(texfile))
-    redirect = ''
-    params = '-interaction=nonstopmode'
-    if options.quiet:
-        redirect = '> /dev/null'
+    out = open(os.devnull, 'wb') if options.quiet else None
+    params = ['-interaction=nonstopmode']
     if options.nopdf:
-        params = params + ' -draftmode'
+        params.append('-draftmode')
 
-    status = os.system('pdflatex %s %s %s' % (params, texfile, redirect))
-    if os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0:
-        status = os.system('pdflatex %s %s %s' % (params, texfile, redirect))
+    status = subprocess.call(['pdflatex'] + params + [texfile], stdout=out)
+    if status == 0:
+        status = subprocess.call(['pdflatex'] + params + [texfile], stdout=out)
 
     os.chdir(origcwd)
 
@@ -48,7 +47,7 @@ def convert(problem, options=None):
     if templ != None:
         templ.cleanup()
 
-    return os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+    return status == 0
 
 
 class ConvertOptions:

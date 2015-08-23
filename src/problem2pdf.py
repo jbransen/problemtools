@@ -9,6 +9,7 @@ from string import Template
 from optparse import OptionParser
 import logging
 import template
+from shutil import move
 
 
 def convert(problem, options=None):
@@ -42,7 +43,7 @@ def convert(problem, options=None):
     os.chdir(origcwd)
 
     if not options.nopdf:
-        os.rename(os.path.splitext(texfile)[0] + '.pdf', destfile)
+        move(os.path.splitext(texfile)[0] + '.pdf', destfile)
 
     if templ != None:
         templ.cleanup()

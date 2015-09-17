@@ -38,7 +38,8 @@ def convert(problem, options=None):
     origcwd = os.getcwd()
 
     # Setup parser and renderer etc
-    tex = TeX(file=texfile)
+    fileh = open(texfile,'r');
+    tex = TeX(file=fileh)
 
     ProblemsetMacros.init(tex)
 
@@ -56,6 +57,7 @@ def convert(problem, options=None):
     if not options.quiet:
         print 'Parsing TeX source...'
     doc = tex.parse()
+    fileh.close()
 
     # Go to destdir
     if destdir:

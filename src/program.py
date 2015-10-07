@@ -203,6 +203,7 @@ class Program(Runnable):
         'prolog': 'Prolog',
         'python2': 'Python 2',
         'python3': 'Python 3',
+        'ruby': 'Ruby',
         'javascript': 'JavaScript',
         'php': 'PHP'
     }
@@ -212,6 +213,7 @@ class Program(Runnable):
               'csharp': '*.cs',
               'python2': '*.py',
               'python3': '*.py',
+              'ruby': '*.rb',
               'go': '*.go',
               'haskell': '*.hs',
               'objectivec': '*.m',
@@ -235,14 +237,17 @@ class Program(Runnable):
     _RUN = {
         'c': '%(exe)s',
         'cpp': '%(exe)s',
-        'java': 'java -Xmx2048m -Xss8m -cp %(path)s %(mainclass)s',
+        'java': 'java -Xmx2048m -Xss64m -cp %(path)s %(mainclass)s',
         'prolog': '%(exe)s',
         'python2': 'python %(mainfile)s',
         'python3': 'python3 %(mainfile)s',
+        'ruby': '/usr/bin/ruby %(mainfile)s',
         'csharp': '%(exe)s.exe',
         'go': '%(exe)s',
         'haskell': '%(exe)s',
         'dir': '%(path)s/run',
+        'javascript': '/usr/bin/js24 %(mainfile)s',
+        'php': '/usr/bin/php -n %(mainfile)s',
         }
     _RUN_PATH_VARS = ['path', 'mainfile', 'exe']
 

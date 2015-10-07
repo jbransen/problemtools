@@ -178,12 +178,13 @@ class TestCase(ProblemAspect):
             self.error('Answer file (%.1f Mb) is larger than output limit (%d Mb), you need to increase output limit' % (anssize, outputlim))
         elif 2 * anssize > outputlim:
             self.warning('Answer file (%.1f Mb) is within %.0f%% of output limit (%d Mb), you might want to increase output limit' % (anssize, 100.0*anssize/outputlim, outputlim))
-        val_res = self._problem.output_validators.validate(self, self.ansfile, self)
-        if val_res.verdict != 'AC':
-            if self.strip_path_prefix(self.infile)[0:6] == 'sample':
-                self.error('Output validator did not accept judge answer file')
-            else:
-                self.warning('Output validator did not accept judge answer file')
+        if not self._problem.is_interactive:
+            val_res = self._problem.output_validators.validate(self, self.ansfile, self)
+            if val_res.verdict != 'AC':
+                if self.strip_path_prefix(self.infile)[0:6] == 'sample':
+                    self.error('Output validator did not accept judge answer file')
+                else:
+                    self.warning('Output validator did not accept judge answer file')
         return self._check_res
 
     def __str__(self):
@@ -198,7 +199,7 @@ class TestCase(ProblemAspect):
             msg = 'Running %s on %s...' % (sub.name, self)
             sys.stdout.write('%s' % msg)
             sys.stdout.flush()
-        if 'interactive' in self._problem.config.get('validation-params'):
+        if self._problem.is_interactive:
             res2 = self._problem.output_validators.validate_interactive(self, sub, timelim_high, self._problem.submissions)
         else:
             status, runtime = sub.run(self.infile, outfile, timelim=timelim_high+1, logger=self)
@@ -613,9 +614,8 @@ class ProblemStatement(ProblemAspect):
     def get_config(self):
         ret = {}
         for lang in self.languages:
-            if lang != '':
-                lang = lang + '.'
-            stmt = open(os.path.join(self._problem.probdir, 'problem_statement', 'problem.' + lang + 'tex')).read()
+            filename = ('problem.%s.tex' % lang) if lang != '' else 'problem.tex'
+            stmt = open(os.path.join(self._problem.probdir, 'problem_statement', filename)).read()
             patterns = [('\\problemname{(.*)}', 'name'),
                         ('^%%\s*plainproblemname:(.*)$', 'name')
                         ]
@@ -984,6 +984,8 @@ class Submissions(ProblemAspect):
         return self._check_res
 
 
+PROBLEM_PARTS = ['config', 'statement', 'validators', 'graders', 'data', 'submissions']
+
 class Problem(ProblemAspect):
     def __init__(self, probdir):
         self.probdir = os.path.realpath(probdir)
@@ -996,10 +998,9 @@ class Problem(ProblemAspect):
             self.shortname = None
             return self
 
-        self.msg('Loading problem %s' % self.shortname)
-
         self.statement = ProblemStatement(self)
         self.config = ProblemConfig(self)
+        self.is_interactive = 'interactive' in self.config.get('validation-params')
         self.input_format_validators = InputFormatValidators(self)
         self.output_validators = OutputValidators(self)
         self.graders = Graders(self)
@@ -1013,7 +1014,7 @@ class Problem(ProblemAspect):
     def __str__(self):
         return self.shortname
 
-    def check(self, args=None, items='all'):
+    def check(self, args=None):
         if self.shortname is None:
             return [1, 0]
         if args is None:
@@ -1024,22 +1025,20 @@ class Problem(ProblemAspect):
         ProblemAspect.bail_on_error = args.bail_on_error
 
         try:
-            mapping = {'config': self.config,
-                       'problem statement': self.statement,
-                       'input format validators': self.input_format_validators,
-                       'output validators': self.output_validators,
-                       'graders': self.graders,
-                       'test data': self.testdata,
-                       'submissions': self.submissions}
-            if items == 'all':
-                items = ['config', 'problem statement', 'input format validators', 'output validators', 'test data', 'submissions']
+            part_mapping = {'config': [self.config],
+                            'statement': [self.statement],
+                            'validators': [self.input_format_validators, self.output_validators],
+                            'graders': [self.graders],
+                            'data': [self.testdata],
+                            'submissions': [self.submissions]}
 
             if not re.match('^[a-z0-9]+$', self.shortname):
                 self.error("Invalid shortname '%s' (must be [a-z0-9]+)" % self.shortname)
 
-            for item in items:
-                self.msg('Checking %s' % item)
-                mapping[item].check(args)
+            for part in args.parts:
+                self.msg('Checking %s' % part)
+                for item in part_mapping[part]:
+                    item.check(args)
         except VerifyError:
             pass
         return [ProblemAspect.errors, ProblemAspect.warnings]
@@ -1053,11 +1052,18 @@ def re_argument(s):
         raise ArgumentTypeError('%s is not a valid regex' % s)
 
 
+def part_argument(s):
+    if s not in PROBLEM_PARTS:
+        raise ArgumentTypeError("Invalid problem part specified: %s" % s)
+    return s
+
+
 def argparser():
     parser = ArgumentParser(description="Validate a problem package in the Kattis problem format.")
     parser.add_argument("-s", "--submission_filter", metavar='SUBMISSIONS', help="run only submissions whose name contains this regex.  The name includes category (accepted, wrong_answer, etc), e.g. 'accepted/hello.java' (for a single file submission) or 'wrong_answer/hello' (for a directory submission)", type=re_argument, default=re.compile('.*'))
     parser.add_argument("-d", "--data_filter", metavar='DATA', help="use only data files whose name contains this regex.  The name includes path relative to the data directory but not the extension, e.g. 'sample/hello' for a sample data file", type=re_argument, default=re.compile('.*'))
     parser.add_argument("-t", "--fixed_timelim", help="use this fixed time limit (useful in combination with -d and/or -s when all AC submissions might not be run on all data)", type=int)
+    parser.add_argument("-p", "--parts", help="only test the indicated parts of the problem.  Each PROBLEM_PART can be one of %s." % PROBLEM_PARTS, metavar='PROBLEM_PART', type=part_argument, nargs='+', default=PROBLEM_PARTS)
     parser.add_argument("-b", "--bail_on_error", help="bail verification on first error", action='store_true')
     parser.add_argument("-l", "--log-level", dest="loglevel", help="set log level (debug, info, warning, error, critical)", default="warning")
     parser.add_argument('problemdir')
@@ -1075,6 +1081,7 @@ if __name__ == '__main__':
                         format=fmt,
                         level=eval("logging." + args.loglevel.upper()))
 
+    print 'Loading problem %s' % os.path.basename(os.path.realpath(args.problemdir))
     with Problem(args.problemdir) as prob:
         [errors, warnings] = prob.check(args)
         print "%s tested: %d errors, %d warnings" % (prob.shortname, errors, warnings)

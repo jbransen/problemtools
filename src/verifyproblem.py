@@ -75,13 +75,13 @@ def locate_default_grader():
 
 
 def is_TLE(status, may_signal_with_usr1=False):
-    return (os.WIFSIGNALED(status) and
-            (os.WTERMSIG(status) == signal.SIGXCPU or
-             (may_signal_with_usr1 and os.WTERMSIG(status) == signal.SIGUSR1)))
+    return False #(os.WIFSIGNALED(status) and
+            #(os.WTERMSIG(status) == signal.SIGXCPU or
+             #(may_signal_with_usr1 and os.WTERMSIG(status) == signal.SIGUSR1)))
 
 
 def is_RTE(status):
-    return not os.WIFEXITED(status) or os.WEXITSTATUS(status)
+    return False # not os.WIFEXITED(status) or os.WEXITSTATUS(status)
 
 
 class SubmissionResult:
@@ -675,13 +675,13 @@ class InputFormatValidators(ProblemAspect):
                 if should_test:
                     self._seen_flags.append(flags)
                     status, runtime = val.run(self._random_input, args=flags, logger=self)
-                    if os.WEXITSTATUS(status) == 42:
+                    if status == 42:
                         testcase.testcasegroup.warning("The validator flags of %s and validator %s does not reject random input" % (testcase.testcasegroup, val))
                 status, runtime = val.run(testcase.infile, args=flags, logger=self)
-                if not os.WIFEXITED(status):
-                    testcase.error('Input format validator %s crashed on input %s' % (val, testcase.infile))
-                if os.WEXITSTATUS(status) != 42:
-                    testcase.error('Input format validator %s did not accept input %s, exit code: %d' % (val, testcase.infile, os.WEXITSTATUS(status)))
+                #if not os.WIFEXITED(status):
+                #    testcase.error('Input format validator %s crashed on input %s' % (val, testcase.infile))
+                if status != 42:
+                    testcase.error('Input format validator %s did not accept input %s, exit code: %d' % (val, testcase.infile, status))
 
 
 class Graders(ProblemAspect):
@@ -806,10 +806,10 @@ class OutputValidators(ProblemAspect):
             else:
                 errorhandler.error('problem has custom scoring but validator did not produce "score.txt"')
 
-        if not os.WIFEXITED(status):
-            errorhandler.error('Judge error: output validator %s crashed, status %d' % (val.name, status))
-            return SubmissionResult('JE')
-        ret = os.WEXITSTATUS(status)
+        #if not os.WIFEXITED(status):
+        #    errorhandler.error('Judge error: output validator %s crashed, status %d' % (val.name, status))
+        #    return SubmissionResult('JE')
+        ret = status #os.WEXITSTATUS(status)
         if ret not in [42, 43]:
             errorhandler.error('Judge error: exit code %d for output validator %s' % (ret, val.name))
             return SubmissionResult('JE')

@@ -1,7 +1,7 @@
 import glob
 import os
 import signal
-import resource
+#import resource
 import logging
 import re
 import shutil
@@ -9,11 +9,19 @@ import tempfile
 import shlex
 import fnmatch
 import platform
+import subprocess
+import threading
+import traceback
+from time import clock
 
 def locate_program(candidatePaths):
     for p in candidatePaths:
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return Executable(p)
+        if platform.system() == 'Windows':
+            p = p + '.exe'
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return Executable(p)
     return None
 
 def locate_checktestdata():
@@ -39,6 +47,50 @@ class ProgramError(Exception):
 class ProgramWarning(Exception):
     pass
 
+class Command(object):
+    """
+    Enables to run subprocess commands in a different thread with TIMEOUT option.
+
+    Based on jcollado's solution:
+    http://stackoverflow.com/questions/1191374/subprocess-with-timeout/4825933#4825933
+    """
+    command = None
+    process = None
+    status = None
+    output, error = '', ''
+
+    def __init__(self, command):
+        if isinstance(command, basestring):
+            command = shlex.split(command)
+        self.command = command
+
+    def run(self, timeout=None, **kwargs):
+        """ Run a command then return: (status, output, error). """
+        def target(**kwargs):
+            try:
+                start = clock()
+                self.process = subprocess.Popen(self.command, **kwargs)
+                self.output, self.error = self.process.communicate()
+                self.status = self.process.returncode
+                self.time = clock() - start
+            except:
+                self.time = clock() - start
+                self.error = traceback.format_exc()
+                self.status = -1
+        # default stdout and stderr
+        if 'stdout' not in kwargs:
+            kwargs['stdout'] = subprocess.PIPE
+        if 'stderr' not in kwargs:
+            kwargs['stderr'] = subprocess.PIPE
+        # thread
+        thread = threading.Thread(target=target, kwargs=kwargs)
+        thread.start()
+        thread.join(timeout)
+        if thread.is_alive():
+            self.process.terminate()
+            thread.join()
+        return self.status, self.time
+
 class Runnable:
     runtime = 0
 
@@ -59,23 +111,13 @@ class Runnable:
 
     def _run_wait(self, argv, infile="/dev/null", outfile="/dev/null", errfile="/dev/null", timelim=1000):
         logging.debug('run "%s < %s > %s 2> %s"', ' '.join(argv), infile, outfile, errfile)
-        pid = os.fork()
-        if pid == 0:  # child
-            try:
-                resource.setrlimit(resource.RLIMIT_CPU, (timelim, timelim + 1))
-                self._setfd(0, infile, os.O_RDONLY)
-                self._setfd(1, outfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
-                self._setfd(2, errfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
-                os.execvp(argv[0], argv)
-            except Exception as e:
-                print "Error"
-                print e
-                os.kill(os.getpid(), signal.SIGTERM)
-            #Unreachable
-            logging.error("Unreachable part of run_wait reached")
-            os.kill(os.getpid(), signal.SIGTERM)
-        (pid, status, rusage) = os.wait4(pid, 0)
-        return status, rusage.ru_utime + rusage.ru_stime
+        
+        fin  = open(os.devnull if infile == '/dev/null' else infile, 'r')
+        fout = open(os.devnull if outfile == '/dev/null' else outfile, 'w')
+        ferr = open(os.devnull if errfile == '/dev/null' else errfile, 'w')
+        
+        command = Command(argv)
+        return command.run(timeout=timelim, stdin=fin, stdout=fout, stderr=ferr)
 
     def _setfd(self, fd, filename, flag):
         tmpfd = os.open(filename, flag)
@@ -86,6 +128,7 @@ class Runnable:
 class Executable(Runnable):
     def __init__(self, path):
         self.path = path
+        self.name = os.path.basename(path)
 
     def __str__(self):
         return 'Executable(%s)' % (self.path)
@@ -126,7 +169,7 @@ class ValidationScript(Runnable):
         if self._compile_result is None:
             self._compile_result = False
             (status, runtime) = self.run(switch_exitcodes=False)
-            self._compile_result = os.WIFEXITED(status) and os.WEXITSTATUS(status) == self.type['compile_exit']
+            self._compile_result = status == self.type['compile_exit']
         return self._compile_result
 
     def run(self, infile='/dev/null', outfile='/dev/null', errfile='/dev/null', args=None, timelim=1000, logger=None, switch_exitcodes=True):
@@ -137,9 +180,9 @@ class ValidationScript(Runnable):
         (status, runtime) = Runnable.run(self, infile, outfile, errfile, args, timelim, logger)
         # This is ugly, switches the accept exit status and our accept exit status 42.
         if switch_exitcodes:
-            if os.WIFEXITED(status) and os.WEXITSTATUS(status) == self.type['run_exit']:
+            if status == self.type['run_exit']:
                 status = 42<<8
-            elif os.WIFEXITED(status) and os.WEXITSTATUS(status) == 42:
+            elif status == 42:
                 status = self.type['run_exit'] << 8
         return (status, runtime)
     
@@ -184,7 +227,7 @@ class Program(Runnable):
         'cpp': 'g++ -g -O2 -static -std=gnu++11 -o "%(exe)s" %(src)s' if platform.system() != 'Darwin' else 'g++ -g -O2 -std=gnu++11 -o "%(exe)s" %(src)s',
         'java': 'javac -d %(path)s %(src)s',
         'prolog': 'swipl -O -q -g main -t halt -o "%(exe)s" -c %(src)s',
-        'csharp': 'dmcs -optimize+ -r:System.Numerics "-out:%(exe)s.exe" %(src)s',
+        'csharp': 'csc /optimize+ /out:%(exe)s.exe %(src)s',
         'go': 'gccgo -g -static-libgcc -o "%(exe)s" %(src)s',
         'haskell': 'ghc -O2 -ferror-spans -threaded -rtsopts -o "%(exe)s" %(src)s',
         'dir': 'cd "%(path)s" && ./build',
@@ -192,11 +235,11 @@ class Program(Runnable):
     _RUN = {
         'c': '%(exe)s',
         'cpp': '%(exe)s',
-        'java': '/usr/bin/java -Xmx2048m -Xss8m -cp %(path)s %(mainclass)s',
+        'java': 'java -Xmx2048m -Xss8m -cp %(path)s %(mainclass)s',
         'prolog': '%(exe)s',
-        'python2': '/usr/bin/python2 %(mainfile)s',
-        'python3': '/usr/bin/python3 %(mainfile)s',
-        'csharp': '/usr/bin/mono %(exe)s.exe',
+        'python2': 'python %(mainfile)s',
+        'python3': 'python3 %(mainfile)s',
+        'csharp': '%(exe)s.exe',
         'go': '%(exe)s',
         'haskell': '%(exe)s',
         'dir': '%(path)s/run',
@@ -308,11 +351,13 @@ class Program(Runnable):
             self._compiler_result = True
             return True
 
-        compiler = (Program._COMPILE[self.lang] + ' > /dev/null 2> /dev/null') % self.__dict__
+        compiler = (Program._COMPILE[self.lang]) % self.__dict__
         logging.debug('compile: %s', compiler)
-        status = os.system(compiler)
+        
+        out = open(os.devnull, 'wb')
+        status = subprocess.call(compiler, stdout=out, stderr=out)
 
-        if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+        if status != 0:
             if logger is not None:
                 logger.error('Compiler failed (status %d) when compiling %s\n        Command used: %s' % (status, self.name, compiler))
             self._compile_result = False
@@ -333,7 +378,7 @@ class Program(Runnable):
             for key in Program._RUN_PATH_VARS:
                 if key in vals:
                     vals[key] = os.path.relpath(vals[key], cwd)
-        return shlex.split(Program._RUN[self.lang] % vals)
+        return [Program._RUN[self.lang] % vals]
 
 
     def __str__(self):

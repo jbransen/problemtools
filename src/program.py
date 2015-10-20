@@ -235,19 +235,19 @@ class Program(Runnable):
         'dir': 'cd "%(path)s" && ./build',
         }
     _RUN = {
-        'c': '%(exe)s',
-        'cpp': '%(exe)s',
-        'java': 'java -Xmx2048m -Xss64m -cp %(path)s %(mainclass)s',
-        'prolog': '%(exe)s',
-        'python2': 'python %(mainfile)s',
-        'python3': 'python3 %(mainfile)s',
-        'ruby': '/usr/bin/ruby %(mainfile)s',
-        'csharp': '%(exe)s.exe',
-        'go': '%(exe)s',
-        'haskell': '%(exe)s',
-        'dir': '%(path)s/run',
-        'javascript': '/usr/bin/js24 %(mainfile)s',
-        'php': '/usr/bin/php -n %(mainfile)s',
+        'c': ['%(exe)s'],
+        'cpp': ['%(exe)s'],
+        'java': ['java','-Xmx2048m','-Xss64m', '-cp', '%(path)s', '%(mainclass)s'],
+        'prolog': ['%(exe)s'],
+        'python2': ['python','%(mainfile)s'],
+        'python3': ['python3','%(mainfile)s'],
+        'ruby': ['ruby','%(mainfile)s'],
+        'csharp': ['%(exe)s.exe'],
+        'go': ['%(exe)s'],
+        'haskell': ['%(exe)s'],
+        'dir': ['%(path)s/run'],
+        'javascript': ['js24', '%(mainfile)s'],
+        'php': ['php','-n','%(mainfile)s'],
         }
     _RUN_PATH_VARS = ['path', 'mainfile', 'exe']
 
@@ -383,7 +383,7 @@ class Program(Runnable):
             for key in Program._RUN_PATH_VARS:
                 if key in vals:
                     vals[key] = os.path.relpath(vals[key], cwd)
-        return [Program._RUN[self.lang] % vals]
+        return map(lambda x: x % vals, Program._RUN[self.lang])
 
 
     def __str__(self):

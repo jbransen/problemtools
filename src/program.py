@@ -181,9 +181,9 @@ class ValidationScript(Runnable):
         # This is ugly, switches the accept exit status and our accept exit status 42.
         if switch_exitcodes:
             if status == self.type['run_exit']:
-                status = 42<<8
+                status = 42
             elif status == 42:
-                status = self.type['run_exit'] << 8
+                status = self.type['run_exit']
         return (status, runtime)
     
     def get_runcmd(self):

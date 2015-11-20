@@ -81,7 +81,7 @@ def is_TLE(status, may_signal_with_usr1=False):
 
 
 def is_RTE(status):
-    return False # not os.WIFEXITED(status) or os.WEXITSTATUS(status)
+    return status != 0 # not os.WIFEXITED(status) or os.WEXITSTATUS(status)
 
 
 class SubmissionResult:
